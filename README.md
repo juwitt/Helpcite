@@ -16,8 +16,11 @@ Zotero PDFs + BibTeX
    [3] Generation
    Chunks + query -> Groq -> answer + sources + passages
         |
-   [4] Streamlit UI
+    [4] Streamlit UI
 ```
+
+![Example use of Helpcite: a claim in the query box, the cited answer on the left, the
+retrieved passages with page numbers on the right](docs/example_use.png)
 
 ```
 helpcite/
@@ -31,8 +34,8 @@ helpcite/
 |-- library.bib         # your Zotero BibTeX export
 |-- .env.example        # template (ships with the repo)
 |-- .env                # your secrets + paths (you create this, git-ignored)
-`-- chroma_db/          # vector index, created automatically
-`-- chroma_db/          # vector index, created automatically
+|-- docs/               # documentation, incl. the screenshot above
+|-- chroma_db/          # vector index, created automatically
 ```
 
 ## What you need beforehand
@@ -65,16 +68,20 @@ First, open the project folder in a terminal. In Windows: open **PowerShell**, t
 `cd "C:\path\to\helpcite"`.
 
 Creating the virtual environment (`.venv`) is optional but recommended: it keeps this app's
-packages out of your global Python. If you skip it, just run `pip install -r
+packages out of your global Python. If you skip it, just run `python -m pip install -r
 requirements.txt` and step 1 is done.
 
 **PowerShell (Windows - the default terminal in VS Code and Terminal app):**
 
 ```powershell
-python -m venv .venv           # creates the .venv folder
-.venv\Scripts\Activate.ps1     # starts using it
-pip install -r requirements.txt
+python -m venv .venv              # creates the .venv folder
+.venv\Scripts\Activate.ps1        # starts using it
+python -m pip install -r requirements.txt
 ```
+
+Use `python -m pip`, not `pip`: `pip` runs a separate `pip.exe` launcher that Windows often
+blocks with `Zugriff verweigert` / access denied, while `python -m pip` uses the interpreter
+you just started and always works.
 
 If activating fails with a message about "running scripts is disabled", allow it once:
 
@@ -89,7 +96,7 @@ then repeat `.venv\Scripts\Activate.ps1`. When it worked, the prompt starts with
 ```bat
 python -m venv .venv
 .venv\Scripts\activate.bat
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 **macOS / Linux (for completeness):**
@@ -97,7 +104,7 @@ pip install -r requirements.txt
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 Notes:
@@ -225,50 +232,11 @@ You can safely stop it and restart later, and re-running it will not duplicate a
 existing chunks are overwritten. Because `python ingest.py` re-reads everything, it is also
 the way to rebuild after you changed `CHUNK_SIZE`, `CHUNK_OVERLAP` or `EMBED_MODEL`.
 
-### 5. Start the app
+### 5. Write your prompt (do this before the first launch)
 
-```bash
-streamlit run app.py
-```
-
-The browser opens the chat window automatically (otherwise go to
-<http://localhost:8501>). Type your claim or question, press **Search**, and you get two
-columns:
-
-- **Answer** - up to 8 bullet points from the Groq model. Each claim carries the number of
-  the excerpt it came from, e.g. `[3]`. The model is told to answer only from the retrieved
-  excerpts and to say so when your library does not support a claim.
-- **Retrieved passages** - numbered to match the answer. Expand one to see its reference,
-  the **page number**, the PDF path and the verbatim text the model saw. Outdated/default
-  pieces of the model output (` ```markdown ` fences) are stripped, so the answer renders as
-  clean Markdown.
-
-The sidebar shows how many chunks live in your index and lets you raise/lower the number of
-passages per query for the current search.
-
-### 6. Adding new papers later
-
-Put the new PDFs into Zotero as usual (they end up in `storage`), then:
-
-```bash
-python ingest_new.py
-```
-
-It compares what is already in `chroma_db/` with what is in your storage folder and only
-embeds the difference - a couple of seconds per new paper instead of a full re-run.
-
-## Tuning
-
-All knobs live in `config.py`:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| `EMBED_MODEL` | `all-MiniLM-L6-v2` | Local embedding model. Small and fast; swap for `BAAI/bge-base-en-v1.5` for better recall |
-| `GROQ_MODEL` | `openai/gpt-oss-120b` | Chat model. See <https://console.groq.com/docs/models> |
-| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 1000 / 150 | Chunk length in characters. Larger = more context, fuzzier matches |
-| `TOP_K` | 10 | How many chunks are shown to the model |
-
-## Writing your own prompt
+Do this step **before** you start the app for the first time - the prompt decides what the
+model does with every query, and changing it later means comparing answers across two
+different settings.
 
 The assistant's behaviour is set in `generator.py` and split into two blocks so you can change
 the subject without touching the answer rules:
@@ -296,19 +264,76 @@ numbered excerpts are appended as the user message at runtime. Tips for both blo
 Example of a narrower `DOMAIN_EXPERTISE` (the app's previous survey-methodology persona):
 
 ```text
-You are a research assistant for empirical social research, especially survey methodology.
-Core concepts: satisficing (non-differentiation, acquiescence, straight-lining) and survey
-modes: CAPI/face-to-face (interviewer administers in person), CATI (telephone), CAWI (web
-self-administered), CALVI (interview via live video). Distinguish carefully between modes
-when comparing results. The user is an expert: no textbook explanations, no small talk.
+Two very important concepts, you should be aware of (and assume the user is aware of, too):
+
+1. Survey satisficing: respondent behavior where answers are "good enough" rather than
+   optimal, including phenomena such as non-differentiation (which is sometimes also called
+   straight-lining), extremes or midpoint selection, speeding, and heaping.
+2. Survey modes: the different methods of data collection, including:
+   - CAPI (Computer-Assisted Personal Interviewing), sometimes synonymous with F2F
+     (face-to-face): an interviewer administers the survey in person using a device.
+   - CATI (Computer-Assisted Telephone Interviewing): an interviewer conducts the survey
+     by phone.
+   - CAWI (Computer-Assisted Web Interviewing): self-administered survey via web browser.
+   - CALVI (Computer-Assisted Live Video Interviewing): an online mode where interviewers
+     and respondents interact via live video feed.
+
+Distinguish carefully between modes when comparing results. The user is an expert: no
+textbook explanations, no small talk.
 ```
 
 **Citations:** every chunk carries an APA-style reference built from `library.bib` (author,
 year, title, journal, volume, pages, DOI) plus its page number, and that is what the model
 sees. It is a best-effort approximation of APA, not a bibliography checker - skim the
 reference before pasting it into a paper. Papers whose PDF name is not present in the bib
-`file` field fall back to being labelled by file name, so keep the `<Author> - <Year> -
-<Title>.pdf` naming Zotero produces by default.
+`file` field fall back to being labelled by file name, so keep the
+`Author - Year - Title.pdf` naming Zotero produces by default.
+
+### 6. Start the app
+
+```bash
+python -m streamlit run app.py
+```
+
+`streamlit` on its own launches a `streamlit.exe` that Windows can block with the same
+`Zugriff verweigert` you may already have seen from `pip`; `python -m streamlit` avoids it.
+
+The browser opens the chat window automatically (otherwise go to
+<http://localhost:8501>). Type your claim or question, press **Search**, and you get two
+columns:
+
+- **Answer** - up to 8 bullet points from the Groq model. Each claim carries the number of
+  the excerpt it came from, e.g. `[3]`. The model is told to answer only from the retrieved
+  excerpts and to say so when your library does not support a claim.
+- **Retrieved passages** - numbered to match the answer. Expand one to see its reference,
+  the **page number**, the PDF path and the verbatim text the model saw. Outdated/default
+  pieces of the model output (` ```markdown ` fences) are stripped, so the answer renders as
+  clean Markdown.
+
+The sidebar shows how many chunks live in your index and lets you raise/lower the number of
+passages per query for the current search.
+
+### 7. Adding new papers later
+
+Put the new PDFs into Zotero as usual (they end up in `storage`), then:
+
+```bash
+python ingest_new.py
+```
+
+It compares what is already in `chroma_db/` with what is in your storage folder and only
+embeds the difference - a couple of seconds per new paper instead of a full re-run.
+
+## Tuning
+
+All knobs live in `config.py`:
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| `EMBED_MODEL` | `all-MiniLM-L6-v2` | Local embedding model. Small and fast; swap for `BAAI/bge-base-en-v1.5` for better recall |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Chat model. See <https://console.groq.com/docs/models> |
+| `CHUNK_SIZE` / `CHUNK_OVERLAP` | 1000 / 150 | Chunk length in characters. Larger = more context, fuzzier matches |
+| `TOP_K` | 10 | How many chunks are shown to the model |
 
 ## What the `chroma_db/` folder is
 
@@ -361,7 +386,7 @@ Practical notes:
 | Symptom | Fix |
 | --- | --- |
 | `run scripts is disabled` after `.venv\Scripts\Activate.ps1` | Once per PC: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force`. Or skip activation entirely and call the venv's Python directly: `.venv\Scripts\python.exe -m pip install -r requirements.txt`, later `.venv\Scripts\python.exe -m streamlit run app.py` |
-| `pip.exe: Zugriff verweigert` / access denied | Use `python -m pip install -r requirements.txt` instead of `pip ...` - that avoids the blocked `pip.exe` launcher. If it still fails, Windows Defender -> **Ransomware protection -> Controlled folder access** is blocking writes into `Documents`; allow `python.exe` there, or move the project to `C:\dev\helpcite` |
+| `pip.exe: Zugriff verweigert` / access denied | Don't use `pip`: run `python -m pip install -r requirements.txt` with the venv active. The `pip.exe` launcher is a separate executable that Windows often refuses to start, especially inside `Documents`, while `python -m pip` runs through the interpreter that is already running. (`python pip install ...` without `-m` is also wrong: Python then looks for a file named `pip`.) Still failing? Windows Defender -> **Ransomware protection -> Controlled folder access** may be blocking writes into `Documents`; allow `python.exe` there, or move the project to `C:\dev\helpcite` |
 | `python` is not recognized | Reinstall Python from python.org and tick **Add python.exe to PATH**; then restart the terminal |
 | `No module named ...` although the install ran | You are using a different interpreter. With the venv active use `python -m pip <package>`; in VS Code pick the interpreter once: Ctrl+Shift+P -> `Python: Select Interpreter` -> `.venv` |
 | Install seems frozen | First run downloads ~2 GB (PyTorch). Let it finish; after that it is cached |
